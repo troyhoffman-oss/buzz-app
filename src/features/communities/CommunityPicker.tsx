@@ -27,7 +27,7 @@ import {
   type DepartureIntent,
   leaveUnsettled,
 } from "./departure";
-import { CommunityDialog } from "./CommunityDialog";
+import { CommunityDialog, type JoinReports } from "./CommunityDialog";
 import type { FederatedIdentity } from "../federated-identity/service";
 import type { JoinRequest } from "./invite-intent";
 import { CommunityPickerItem, MEMBERSHIP_SECTION } from "./CommunityPickerItem";
@@ -54,6 +54,9 @@ export function CommunityPicker({
   communities,
   federatedIdentity,
   invite,
+  joinVisit,
+  onJoin,
+  joinReports,
   onInviteClose,
   onSelect,
   onOpenTarget,
@@ -61,8 +64,14 @@ export function CommunityPicker({
 }: {
   communities: Communities;
   federatedIdentity?: FederatedIdentity | undefined;
-  invite?: (JoinRequest & { requestId: number }) | undefined;
-  onInviteClose?: ((requestId: number) => void) | undefined;
+  invite?: (JoinRequest & { requestId: string }) | undefined;
+  /** An open join visit with no address yet: the manual Join a community. */
+  joinVisit?: string | undefined;
+  /** Opens Join a community as a navigation visit; without it, local state. */
+  onJoin?: (() => void) | undefined;
+  /** The open join dialog's reports to the app: writes and the typed address. */
+  joinReports?: JoinReports | undefined;
+  onInviteClose?: ((requestId: string) => void) | undefined;
   settingsCards?: Pick<SettingsCards, "subscribe" | "has"> | undefined;
   onSelect?: ((id: string | null) => void) | undefined;
   /** Menu destinations (Invites, hosting) open through the host's navigation. */
@@ -70,7 +79,8 @@ export function CommunityPicker({
 }) {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const [joining, setJoining] = useState(false);
+  const [joiningHere, setJoining] = useState(false);
+  const joining = joiningHere || !!joinVisit;
   const navigated = useRef(false);
   const wasJoining = useRef(false);
   useEffect(() => {
@@ -310,7 +320,8 @@ export function CommunityPicker({
               icon={<UsersPlusIcon size={20} />}
               onClick={() => {
                 setSwitcherOpen(false);
-                setJoining(true);
+                if (onJoin) onJoin();
+                else setJoining(true);
               }}
             />
             {onOpenTarget && hostedAvailable && (
@@ -333,16 +344,18 @@ export function CommunityPicker({
       </nav>
       {(joining || invite) && (
         <CommunityDialog
-          key={invite ? invite.requestId : "manual"}
+          key={invite ? invite.requestId : (joinVisit ?? "manual")}
           communities={communities}
           federatedIdentity={federatedIdentity}
           mode="join"
           invite={invite}
+          {...joinReports}
           submittedDestination={invite?.submitted === true}
           onJoined={(id) => select(id)}
           close={() => {
             setJoining(false);
-            if (invite) onInviteClose?.(invite.requestId);
+            const visit = invite?.requestId ?? joinVisit;
+            if (visit) onInviteClose?.(visit);
           }}
         />
       )}
