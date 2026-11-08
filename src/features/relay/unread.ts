@@ -62,7 +62,7 @@ export type MessageAttention = Readonly<{
    * attention when the lookup finishes. */
   pending?: boolean;
   unread: boolean;
-  /** This row is explicitly forced unread during the current channel visit. */
+  /** Explicitly forced unread until read, deletion, access retirement, or session end. */
   forced: boolean;
   viewing: boolean;
 }>;
@@ -309,7 +309,8 @@ export function createUnread({
       visible: (messageId: string, measured: boolean) => boolean;
     }
   >();
-  // Per-visit message overlay; only the sidebar hint is persisted in read state.
+  // Exact selected-message intent lasts for this host session; read state keeps
+  // only the channel hint, so leaving a channel is not a message read.
   const forcedMessages = new Map<string, Set<string>>();
   const entered = new Set<string>();
   const openChannels = new Set<string>();
@@ -594,6 +595,13 @@ export function createUnread({
     }
     for (const event of events.values())
       if (contentKind(event) && !tombstones.has(event.id)) indexContent(event);
+    // Retire exact intent only when deletion evidence names it. A bounded
+    // observation reset is not a read of the selected message.
+    for (const [channelId, ids] of forcedMessages) {
+      for (const id of ids)
+        if (tombstones.has(id) || retracted.has(id)) ids.delete(id);
+      if (!ids.size) forcedMessages.delete(channelId);
+    }
     for (const { channelId, evidence } of lookups.values()) {
       const event =
         evidence === undefined ? undefined : witnesses.get(evidence);
@@ -2765,7 +2773,6 @@ export function createUnread({
     leaveChannel(channelId) {
       openChannels.delete(channelId);
       visits.set(channelId, (visits.get(channelId) ?? 0) + 1);
-      forcedMessages.delete(channelId);
       if (!closed && allowed(channelId)) {
         indexEvidence();
         seeChannel(channelId);
